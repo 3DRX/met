@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Camera,
   CameraOff,
   Copy,
-  LayoutGrid,
   Link2,
   Mic,
   MicOff,
-  Phone,
+  PhoneCall,
+  PhoneOff,
   Plus,
-  RefreshCw,
-  Video,
-  VideoOff,
+  Share2,
 } from "lucide-react";
 import {
   Navigate,
@@ -49,7 +48,7 @@ type RoomConnectionState = {
 
 const initialConnectionState: RoomConnectionState = {
   status: "idle",
-  message: "Ready to join a room.",
+  message: "Ready.",
   role: null,
   participantCount: 0,
   roomId: null,
@@ -63,21 +62,21 @@ function joinRoomPath(roomId: string) {
 function formatStatus(status: SessionStatus) {
   switch (status) {
     case "getting-media":
-      return "Requesting camera and microphone";
+      return "Getting ready";
     case "connecting":
-      return "Connecting to the room";
+      return "Connecting";
     case "waiting-for-peer":
-      return "Waiting for the second participant";
+      return "Waiting";
     case "connected":
-      return "Call connected";
+      return "Live";
     case "reconnecting":
       return "Reconnecting";
     case "ended":
-      return "Call ended";
+      return "Ended";
     case "error":
-      return "Connection error";
+      return "Error";
     default:
-      return "Idle";
+      return "Ready";
   }
 }
 
@@ -106,65 +105,35 @@ function RoomShell() {
   };
 
   return (
-    <main className="app-shell">
-      <section className="lobby-layout">
-        <div className="brand-column">
-          <p className="eyebrow">Northline Call</p>
-          <h1>1v1 video, routed through Cloudflare TURN.</h1>
-          <p className="lede">
-            Create a room, share the link, and start a direct camera call with no account,
-            no queue, and no clutter.
-          </p>
-          <div className="callout-row">
-            <span className="meta-chip">
-              <LayoutGrid size={14} />
-              Single room
-            </span>
-            <span className="meta-chip">
-              <Link2 size={14} />
-              Invite link
-            </span>
-            <span className="meta-chip">
-              <RefreshCw size={14} />
-              WebRTC + TURN
-            </span>
-          </div>
+    <main className="lobby-screen">
+      <section className="lobby-shell" aria-label="Call start screen">
+        <div className="lobby-brand">
+          <h1>Met</h1>
+          <p className="lobby-copy">Start or join a call.</p>
         </div>
 
-        <div className="surface panel">
-          <div className="panel-header">
-            <div>
-              <p className="panel-eyebrow">Start here</p>
-              <h2>Join or create a room</h2>
-            </div>
-          </div>
+        <div className="lobby-panel">
+          <button className="lobby-primary" type="button" onClick={createRoom}>
+            <Plus size={18} />
+            Start
+          </button>
 
-          <div className="lobby-actions">
-            <button className="primary-button" type="button" onClick={createRoom}>
-              <Plus size={16} />
-              Create room
+          <div className="lobby-join">
+            <input
+              aria-label="Paste link"
+              placeholder="Paste link"
+              value={roomInput}
+              onChange={(event) => setRoomInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  joinRoom();
+                }
+              }}
+            />
+            <button className="lobby-join-button" type="button" onClick={joinRoom}>
+              <Link2 size={16} />
+              Join
             </button>
-            <div className="input-row">
-              <input
-                aria-label="Room code or invite link"
-                placeholder="Paste a room code or invite link"
-                value={roomInput}
-                onChange={(event) => setRoomInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    joinRoom();
-                  }
-                }}
-              />
-              <button className="secondary-button" type="button" onClick={joinRoom}>
-                <Link2 size={16} />
-                Join
-              </button>
-            </div>
-          </div>
-
-          <div className="panel-footer">
-            <span className="support-note">Anonymous room links. No accounts required.</span>
           </div>
         </div>
       </section>
@@ -191,6 +160,8 @@ function RoomView() {
   const [mediaReady, setMediaReady] = useState(false);
   const [localMuted, setLocalMuted] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [localVideoReady, setLocalVideoReady] = useState(false);
+  const [remoteVideoReady, setRemoteVideoReady] = useState(false);
   const [canCopy, setCanCopy] = useState(true);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -224,6 +195,7 @@ function RoomView() {
     }
     peerConnectionRef.current = null;
     remoteStreamRef.current = null;
+    setRemoteVideoReady(false);
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
@@ -249,6 +221,7 @@ function RoomView() {
       stream.getTracks().forEach((track) => track.stop());
     }
     localStreamRef.current = null;
+    setLocalVideoReady(false);
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null;
     }
@@ -273,6 +246,11 @@ function RoomView() {
       role: null,
       participantCount: 0,
     });
+  };
+
+  const returnHome = () => {
+    leaveCall();
+    navigate("/", { replace: true });
   };
 
   const sendSignal = (message: ClientSignalMessage) => {
@@ -302,6 +280,7 @@ function RoomView() {
       const [stream] = event.streams;
       if (stream) {
         remoteStreamRef.current = stream;
+        setRemoteVideoReady(true);
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = stream;
         }
@@ -347,13 +326,14 @@ function RoomView() {
   };
 
   const connect = async () => {
-    updateState({ status: "getting-media", message: "Requesting camera and microphone." });
+    updateState({ status: "getting-media", message: "Getting ready." });
 
     const mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: true,
     });
     localStreamRef.current = mediaStream;
+    setLocalVideoReady(true);
     setMediaReady(true);
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = mediaStream;
@@ -374,13 +354,13 @@ function RoomView() {
     socketRef.current = socket;
     updateState({
       status: "connecting",
-      message: "Connecting to the room.",
+      message: "Connecting.",
     });
 
     socket.onopen = () => {
       updateState({
         status: "waiting-for-peer",
-        message: "Joined. Share the link and wait for the peer to connect.",
+        message: "Waiting.",
       });
     };
 
@@ -410,7 +390,7 @@ function RoomView() {
         peerJoinedRef.current = true;
         updateState({
           status: "connecting",
-          message: "Peer joined. Negotiating the call.",
+          message: "Connecting.",
           participantCount: message.participantCount,
         });
         if (roleRef.current === "host") {
@@ -424,7 +404,7 @@ function RoomView() {
         closePeerConnection();
         updateState({
           status: "waiting-for-peer",
-          message: "Peer left. The room is still open for a reconnect.",
+          message: "Waiting.",
           participantCount: message.participantCount,
         });
         return;
@@ -433,7 +413,7 @@ function RoomView() {
       if (message.type === "room-full") {
         updateState({
           status: "error",
-          message: "This room already has two participants.",
+          message: "Room full.",
         });
         leaveCall();
         return;
@@ -453,7 +433,7 @@ function RoomView() {
           sendSignal({ type: "answer", sdp: answer });
           updateState({
             status: "connecting",
-            message: "Answer sent. Establishing media paths.",
+            message: "Connecting.",
           });
           return;
         }
@@ -476,7 +456,7 @@ function RoomView() {
           closePeerConnection();
           updateState({
             status: "ended",
-            message: "Peer hung up.",
+            message: "Ended.",
             participantCount: 1,
           });
         }
@@ -489,7 +469,7 @@ function RoomView() {
         releaseMedia();
         updateState({
           status: "ended",
-          message: "Room socket closed.",
+          message: "Ended.",
         });
       }
     };
@@ -497,7 +477,7 @@ function RoomView() {
     socket.onerror = () => {
       updateState({
         status: "error",
-        message: "Room connection error.",
+        message: "Error.",
       });
     };
   };
@@ -540,74 +520,86 @@ function RoomView() {
   const statusLabel = useMemo(() => formatStatus(state.status), [state.status]);
 
   return (
-    <main className="call-shell">
-      <section className="call-header">
-        <div className="room-summary">
-          <p className="panel-eyebrow">Room</p>
-          <h1>{roomId}</h1>
-          <div className="callout-row">
-            <span className="meta-chip">
-              <Video size={14} />
-              {state.participantCount} participant{state.participantCount === 1 ? "" : "s"}
-            </span>
-            <span className="meta-chip">
-              <LayoutGrid size={14} />
-              {state.role ? `Role: ${state.role}` : "Awaiting role"}
-            </span>
-            <span className="meta-chip">
-              <RefreshCw size={14} />
-              {statusLabel}
-            </span>
+    <main className="call-screen">
+      <video
+        ref={remoteVideoRef}
+        className="remote-stage"
+        autoPlay
+        playsInline
+        hidden={!remoteVideoReady}
+      />
+      {!remoteVideoReady && (
+        <div className="remote-empty" aria-hidden="true">
+          <div className="remote-empty-card">
+            <strong>{state.participantCount > 0 ? "Connecting" : "Waiting"}</strong>
           </div>
         </div>
+      )}
 
-        <div className="room-actions">
-          <button className="secondary-button" type="button" onClick={copyInvite} disabled={!state.inviteUrl}>
-            <Copy size={16} />
-            {canCopy ? "Copy link" : "Copied"}
+      <div className="call-overlay">
+        <header className="call-topbar">
+          <button
+            className="home-pill"
+            type="button"
+            onClick={returnHome}
+            aria-label="Back to home"
+            title="Back to home"
+          >
+            <ArrowLeft size={18} />
           </button>
-          <button className="primary-button" type="button" onClick={connect} disabled={mediaReady}>
-            <Phone size={16} />
-            {mediaReady ? "Joined" : "Join call"}
-          </button>
-          <button className="danger-button" type="button" onClick={leaveCall}>
-            <Phone size={16} />
-            Leave
-          </button>
-        </div>
-      </section>
 
-      <section className="call-stage">
-        <article className="video-panel remote-panel">
-          <div className="panel-label">Remote</div>
-          <video ref={remoteVideoRef} autoPlay playsInline />
-          {!remoteStreamRef.current && <div className="video-placeholder">Waiting for the peer video feed.</div>}
-        </article>
+          <div className="call-branding">
+            <span className="call-subtle">{statusLabel}</span>
+          </div>
 
-        <aside className="video-panel local-panel">
-          <div className="panel-label">Local</div>
-          <video ref={localVideoRef} autoPlay muted playsInline />
-          {!localStreamRef.current && <div className="video-placeholder">Camera is off.</div>}
+          <button
+            className="share-pill"
+            type="button"
+            onClick={copyInvite}
+            disabled={!state.inviteUrl}
+            aria-label={canCopy ? "Share link" : "Copied"}
+            title={canCopy ? "Share link" : "Copied"}
+          >
+            <Share2 size={16} />
+          </button>
+        </header>
+
+        <aside className="local-tile">
+          <div className="tile-label">Me</div>
+          <video ref={localVideoRef} autoPlay muted playsInline hidden={!localVideoReady} />
+          {!localVideoReady && <div className="tile-placeholder">No video</div>}
         </aside>
-      </section>
 
-      <section className="control-strip">
-        <div className="status-banner">
-          <strong>{statusLabel}</strong>
-          <span>{state.message}</span>
-        </div>
-        <div className="control-buttons">
-          <button className="icon-button" type="button" onClick={toggleAudio} disabled={!mediaReady}>
-            {localMuted ? <MicOff size={18} /> : <Mic size={18} />}
+        <footer className="call-dock" aria-label="Call controls">
+          <button className="dock-button" type="button" onClick={toggleAudio} disabled={!mediaReady}>
+            {localMuted ? <MicOff size={20} /> : <Mic size={20} />}
           </button>
-          <button className="icon-button" type="button" onClick={toggleCamera} disabled={!mediaReady}>
-            {cameraEnabled ? <Camera size={18} /> : <CameraOff size={18} />}
+          <button className="dock-button" type="button" onClick={toggleCamera} disabled={!mediaReady}>
+            {cameraEnabled ? <Camera size={20} /> : <CameraOff size={20} />}
           </button>
-          <button className="icon-button" type="button" onClick={copyInvite} disabled={!state.inviteUrl}>
-            <Copy size={18} />
+          {!mediaReady ? (
+            <button className="dock-button dock-button--join" type="button" onClick={connect}>
+              <PhoneCall size={20} />
+              Join
+            </button>
+          ) : (
+            <button className="dock-button dock-button--hangup" type="button" onClick={leaveCall}>
+              <PhoneOff size={20} />
+              Leave
+            </button>
+          )}
+          <button
+            className="dock-button"
+            type="button"
+            onClick={copyInvite}
+            disabled={!state.inviteUrl}
+            aria-label={canCopy ? "Share link" : "Copied"}
+            title={canCopy ? "Share link" : "Copied"}
+          >
+            <Copy size={20} />
           </button>
-        </div>
-      </section>
+        </footer>
+      </div>
     </main>
   );
 }

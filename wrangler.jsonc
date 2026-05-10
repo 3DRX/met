@@ -19,6 +19,12 @@
       }
     ]
   },
+  "routes": [
+    {
+      "pattern": "met.3drx.top",
+      "custom_domain": true
+    }
+  ],
   "migrations": [
     {
       "tag": "v1",
